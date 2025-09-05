@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Smart To-Do + Chatbot</title>
+<style>
+:root{--bg:#0b1020;--card:#0f1730;--muted:#9fb0db;--text:#e8eeff;--brand:#6ea8fe;--accent:#8bda91}
+*{box-sizing:border-box}html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:var(--text);background:linear-gradient(180deg,#07102a,#0b1020);-webkit-font-smoothing:antialiased}
+.app{max-width:980px;margin:28px auto;padding:16px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.h1{font-size:22px;display:flex;gap:10px;align-items:center}
+.card{background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0));border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.controls{display:grid;grid-template-columns:1fr 120px 130px auto;gap:10px;margin-bottom:12px}
+input,select,button,textarea{background:#071229;color:var(--text);border:1px solid rgba(255,255,255,.06);padding:10px;border-radius:10px}
+button{cursor:pointer}
+.list{display:grid;gap:8px;margin-top:8px}
+.item{display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.02);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.03)}
+.item .title{font-weight:600}
+.item.done .title{opacity:.6;text-decoration:line-through}
+.footer{display:flex;justify-content:space-between;margin-top:10px;color:var(--muted)}
+
+/* Floating chat icon */
+.chat-fab{position:fixed;right:20px;bottom:20px;width:60px;height:60px;border-radius:50%;background:linear-gradient(180deg,#6ea8fe,#4d7fe5);display:flex;align-items:center;justify-content:center;color:#07203f;font-size:28px;cursor:pointer;box-shadow:0 10px 30px rgba(80,110,180,.3);z-index:9999;border:4px solid rgba(255,255,255,.06)}
+.chat-fab:hover{transform:translateY(-3px)}
+
+/* Chat modal (full screen) */
+.chat-modal{position:fixed;inset:0;background:rgba(2,6,23,.9);display:none;align-items:center;justify-content:center;z-index:9998;padding:18px}
+.chat-window{width:100%;max-width:900px;height:90vh;background:linear-gradient(180deg,#07112a,#09142f);border-radius:12px;padding:12px;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.06)}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.02);color:var(--muted)}
+.chat-body{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:78%;padding:10px;border-radius:10px;line-height:1.3}
+.msg.user{align-self:flex-end;background:linear-gradient(180deg,#184a8b,#0f3b6f);border:1px solid rgba(255,255,255,.04)}
+.msg.bot{align-self:flex-start;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.03);color:var(--muted)}
+.chat-input{display:flex;gap:8px;padding:8px;border-top:1px solid rgba(255,255,255,.02)}
+.chat-input input{flex:1}
+.hint{font-size:13px;color:var(--muted);margin-top:6px}
+
+/* small bot icon in window to collapse */
+.collapse-btn{background:transparent;border:1px solid rgba(255,255,255,.04);padding:6px 10px;border-radius:10px;color:var(--muted);cursor:pointer}
+
+/* responsive */
+@media(max-width:720px){.controls{grid-template-columns:1fr 100px 100px auto}.chat-window{height:95vh}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="h1">✅ Smart To-Do + Chatbot</div>
+    <div style="color:var(--muted)">Offline demo • Local storage</div>
+  </div>
+
+  <div class="card">
+    <div class="controls">
+      <input id="newTitle" placeholder="What needs doing?" autocomplete="off">
+      <select id="newPriority" title="Priority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+      <input id="newDue" type="date" title="Due date">
+      <button id="addBtn">Add task</button>
+    </div>
+
+    <div class="toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <div style="color:var(--muted)">Commands (chat): <span style="color:var(--text)">add &lt;task&gt;, list tasks, complete &lt;id&gt;, delete &lt;id&gt;</span></div>
+    </div>
+
+    <div id="list" class="list"></div>
+    <div id="empty" class="hint" style="display:none">No tasks yet — add one above or use the chatbot by clicking the blue icon.</div>
+
+    <div class="footer card" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;padding:10px">
+      <div><span id="count">0</span> tasks • <span id="remaining">0</span> remaining</div>
+      <div style="color:var(--muted)">Data saves in your browser (localStorage)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Floating chat button -->
+<div class="chat-fab" id="chatFab" title="Open chat">💬</div>
+
+<!-- Chat modal (full screen popup) -->
+<div class="chat-modal" id="chatModal" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="chat-window" role="document">
+    <div class="chat-header">
+      <div>Smart Chatbot</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="collapse-btn" id="minimizeBtn" title="Minimize to icon">Minimize</button>
+        <button class="collapse-btn" id="closeBtn" title="Close chat">Close</button>
+      </div>
+    </div>
+    <div class="chat-body" id="chatBody" aria-live="polite"></div>
+    <div class="chat-input">
+      <input id="chatInput" placeholder="Type a message, e.g. 'add buy milk' or 'list tasks'">
+      <button id="sendBtn">Send</button>
+    </div>
+    <div class="hint" style="padding:8px 12px">Tip: Use chat to manage tasks (try "add pay bills", "list tasks", "complete 1"). The bot replies and performs commands.</div>
+  </div>
+</div>
+
+<template id="itemTemplate">
+  <div class="item">
+    <input class="toggle" type="checkbox">
+    <div style="flex:1">
+      <div class="title"></div>
+      <div class="meta" style="font-size:12px;color:var(--muted)"></div>
+    </div>
+    <div class="pill priority" style="padding:6px;border-radius:8px;font-size:13px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="edit">✏️</button>
+      <button class="delete">🗑️</button>
+    </div>
+  </div>
+</template>
+
+<script>
+// Simple To-Do + Chatbot (client-side only, no external API)
+// Data stored in localStorage under key smart_todo_chat_v1
+const uid = ()=>Math.random().toString(36).slice(2,9);
+const key = "smart_todo_chat_v1";
+let state = { items: JSON.parse(localStorage.getItem(key)||"[]") };
+
+function persist(){ localStorage.setItem(key, JSON.stringify(state.items)); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+function addItem(title, priority="medium", due=null){
+  title = (title||"").trim();
+  if(!title) return false;
+  const it = { id: uid(), title, done:false, priority, due: due||null, created: Date.now(), order: state.items.length };
+  state.items.push(it); persist(); render(); return it;
+}
+function updateItem(id, fields){ const it = state.items.find(x=>x.id===id); if(!it) return; Object.assign(it, fields); persist(); render(); return it; }
+function deleteItem(id){ state.items = state.items.filter(x=>x.id!==id); persist(); render(); }
+function markComplete(id){ updateItem(id,{done:true}); }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  if(state.items.length===0) document.getElementById("empty").style.display="block"; else document.getElementById("empty").style.display="none";
+  state.items.forEach((item, idx)=>{
+    const tpl = document.getElementById("itemTemplate").content.firstElementChild.cloneNode(true);
+    tpl.dataset.id = item.id;
+    tpl.querySelector(".title").textContent = item.title;
+    tpl.querySelector(".meta").textContent = "Created " + new Date(item.created).toLocaleString();
+    tpl.querySelector(".pill.priority").textContent = item.priority;
+    tpl.querySelector(".toggle").checked = item.done;
+    if(item.done) tpl.classList.add("done");
+    tpl.querySelector(".toggle").addEventListener("change", e=> updateItem(item.id,{done:e.target.checked}));
+    tpl.querySelector(".delete").addEventListener("click", ()=> deleteItem(item.id));
+    tpl.querySelector(".edit").addEventListener("click", ()=> {
+      const t = prompt("Edit task title:", item.title);
+      if(t!==null) updateItem(item.id,{title:t.trim()||item.title});
+    });
+    list.appendChild(tpl);
+  });
+  document.getElementById("count").textContent = state.items.length;
+  document.getElementById("remaining").textContent = state.items.filter(i=>!i.done).length;
+}
+
+// UI hooks
+document.getElementById("addBtn").addEventListener("click", ()=>{
+  const title = document.getElementById("newTitle").value;
+  const pr = document.getElementById("newPriority").value;
+  const due = document.getElementById("newDue").value || null;
+  if(addItem(title,pr,due)){
+    document.getElementById("newTitle").value=""; document.getElementById("newDue").value="";
+    appendBotSystemMessage("Task added.");
+  }
+});
+
+// Initialize
+if(state.items.length===0){
+  addItem("Welcome to Smart To-Do", "medium", todayISO());
+  addItem("Click the blue chat icon to control tasks with the bot", "low", null);
+}
+render();
+
+// --- Chatbot UI & logic ---
+const chatFab = document.getElementById("chatFab");
+const chatModal = document.getElementById("chatModal");
+const chatBody = document.getElementById("chatBody");
+const chatInput = document.getElementById("chatInput");
+const sendBtn = document.getElementById("sendBtn");
+const closeBtn = document.getElementById("closeBtn");
+const minimizeBtn = document.getElementById("minimizeBtn");
+
+chatFab.addEventListener("click", ()=> openChat());
+closeBtn.addEventListener("click", ()=> closeChat());
+minimizeBtn.addEventListener("click", ()=> minimizeChat());
+sendBtn.addEventListener("click", ()=> handleUserMessage());
+chatInput.addEventListener("keydown", e=>{ if(e.key==="Enter") handleUserMessage(); });
+
+function openChat(){ chatModal.style.display="flex"; chatModal.setAttribute("aria-hidden","false"); chatInput.focus(); }
+function closeChat(){ chatModal.style.display="none"; chatModal.setAttribute("aria-hidden","true"); }
+function minimizeChat(){ closeChat(); /* Keep fab visible for reopen */ }
+
+function appendMessage(text, who="bot"){
+  const m = document.createElement("div");
+  m.className = "msg " + (who==="user"?"user":"bot");
+  m.textContent = text;
+  chatBody.appendChild(m);
+  chatBody.scrollTop = chatBody.scrollHeight;
+}
+function appendBotSystemMessage(text){ appendMessage(text,"bot"); }
+
+function handleUserMessage(){
+  const txt = chatInput.value.trim();
+  if(!txt) return;
+  appendMessage(txt,"user");
+  chatInput.value = "";
+  processBotMessage(txt);
+}
+
+// Simple bot: rules + basic NLP for task commands
+function processBotMessage(text){
+  const t = text.toLowerCase().trim();
+  // commands
+  if(t.startsWith("add ")){
+    const title = text.slice(4).trim();
+    if(!title){ appendBotSystemMessage("Please tell me what to add, e.g. 'add buy milk'"); return; }
+    const it = addItem(title,"medium",null);
+    appendBotSystemMessage("Added task: \""+it.title+"\" (id: "+it.id+")");
+    return;
+  }
+  if(t==="list tasks" || t==="list" || t==="show tasks"){
+    if(state.items.length===0){ appendBotSystemMessage("No tasks yet."); return; }
+    // show a compact list
+    state.items.forEach((it,idx)=>{
+      appendBotSystemMessage((idx+1)+". ["+(it.done?"x":" ")+"] "+it.title+" (id:"+it.id+")");
+    });
+    return;
+  }
+  // complete by index or id
+  if(t.startsWith("complete ") || t.startsWith("done ")){
+    const arg = text.split(" ")[1];
+    if(!arg){ appendBotSystemMessage("Tell me which task to complete, e.g. 'complete 1' or 'complete <id>'"); return; }
+    // try index
+    const maybeIndex = parseInt(arg,10);
+    if(!isNaN(maybeIndex) && maybeIndex>=1 && maybeIndex<=state.items.length){
+      const it = state.items[maybeIndex-1];
+      updateItem(it.id,{done:true});
+      appendBotSystemMessage("Marked done: "+it.title);
+      return;
+    }
+    // try id
+    const byId = state.items.find(x=>x.id===arg);
+    if(byId){ updateItem(byId.id,{done:true}); appendBotSystemMessage("Marked done: "+byId.title); return; }
+    appendBotSystemMessage("Couldn't find that task. Use the list command to see IDs or positions.");
+    return;
+  }
+  // delete
+  if(t.startsWith("delete ") || t.startsWith("remove ")){
+    const arg = text.split(" ")[1];
+    if(!arg){ appendBotSystemMessage("Tell me which task to delete, e.g. 'delete 1' or 'delete <id>'"); return; }
+    const idx = parseInt(arg,10);
+    if(!isNaN(idx) && idx>=1 && idx<=state.items.length){
+      const it = state.items[idx-1];
+      deleteItem(it.id); appendBotSystemMessage("Deleted: "+it.title); return;
+    }
+    const byId = state.items.find(x=>x.id===arg);
+    if(byId){ deleteItem(byId.id); appendBotSystemMessage("Deleted: "+byId.title); return; }
+    appendBotSystemMessage("Couldn't find that task to delete.");
+    return;
+  }
+  // help
+  if(t==="help"||t==="commands"){
+    appendBotSystemMessage("You can control tasks with commands: 'add <task>', 'list tasks', 'complete <n|id>', 'delete <n|id>'. Also ask general questions.");
+    return;
+  }
+  // greetings / small talk
+  const greetings = ["hi","hello","hey","hiya","yo"];
+  if(greetings.includes(t)){ appendBotSystemMessage("Hello! I'm your task helper. Try 'help' for commands."); return; }
+  if(t.includes("how are you")){ appendBotSystemMessage("I'm a demo bot — ready to help with your tasks!"); return; }
+  // fallback: simple conversational replies with basic patterns
+  if(t.includes("time")){
+    appendBotSystemMessage("Current time: "+new Date().toLocaleString());
+    return;
+  }
+  // echo fallback with suggestion
+  appendBotSystemMessage("I heard: \""+text+"\". Try commands like 'add pay rent' or 'list tasks'. Type 'help' for options.");
+}
+
+// Gently show an initial bot message in chat history when opened first time
+let firstOpenShown = false;
+chatFab.addEventListener("click", ()=>{
+  if(!firstOpenShown){
+    appendBotSystemMessage("Hi — I'm the Smart Chatbot. Type 'help' to see commands for managing tasks.");
+    firstOpenShown = true;
+  }
+});
+
+// Allow closing modal by clicking outside window
+document.getElementById("chatModal").addEventListener("click", (e)=>{ if(e.target===document.getElementById("chatModal")) closeChat(); });
+
+</script>
+</body>
+</html>

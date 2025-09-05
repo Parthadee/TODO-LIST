@@ -1,4 +1,4 @@
-<img src= "image/banner.png" />
+<img src= "IMG_20250905_222005_976.jpg" />
 
 # Modern To-Do List with AI Assistant 🤖✨
 
